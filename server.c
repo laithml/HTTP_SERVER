@@ -5,6 +5,8 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include "threadpool.h"
 
 
@@ -25,9 +27,10 @@ char *badRequest() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n",msg);
+    printf("%s\n\n\n\n", msg);
     return msg;
 }
+
 char *found() {
     time_t now;
     char timeStr[128];
@@ -41,9 +44,11 @@ char *found() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n",msg);
+    printf("%s\n\n\n\n", msg);
     return msg;
-}char *forbidden() {
+}
+
+char *forbidden() {
     time_t now;
     char timeStr[128];
     now = time(NULL);
@@ -56,9 +61,11 @@ char *found() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n",msg);
+    printf("%s\n\n\n\n", msg);
     return msg;
-}char *notFound() {
+}
+
+char *notFound() {
     time_t now;
     char timeStr[128];
     now = time(NULL);
@@ -71,9 +78,11 @@ char *found() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n",msg);
+    printf("%s\n\n\n\n", msg);
     return msg;
-}char *serverError() {
+}
+
+char *serverError() {
     time_t now;
     char timeStr[128];
     now = time(NULL);
@@ -86,9 +95,11 @@ char *found() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n",msg);
+    printf("%s\n\n\n\n", msg);
     return msg;
-}char *notSupported() {
+}
+
+char *notSupported() {
     time_t now;
     char timeStr[128];
     now = time(NULL);
@@ -101,10 +112,36 @@ char *found() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n",msg);
+    printf("%s\n\n\n\n", msg);
     return msg;
 }
 
+void writeFile(FILE *file, char *path, char *extension, int sd) {
+    fseek(file, 0, SEEK_END);
+    int file_size = ftell(file);
+    rewind(file);
+
+    struct stat attrib;
+    stat(path, &attrib);
+    char lastMod[128];
+    strftime(lastMod, sizeof(lastMod), RFC1123FMT, gmtime(&attrib.st_mtime));
+
+    time_t now;
+    char timeStr[128];
+    now = time(NULL);
+    strftime(timeStr, sizeof(timeStr), RFC1123FMT, gmtime(&now));
+
+    char header[300];
+    sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
+    write(sd, header, sizeof(header));
+
+    char readBuffer[1024];
+    while (!feof(file)) {
+        int bytes_read = fread(readBuffer, 1, 1024, file);
+        write(sd, readBuffer, bytes_read);
+        bzero(readBuffer, sizeof(readBuffer));
+    }
+}
 
 
 int Handle(void *socket_id);
@@ -195,6 +232,18 @@ int main(int argc, char **argv) {
     destroy_threadpool(tp);
 }
 
+//int main(){
+//
+//    DIR* dir = opendir("serverfolder/html/index.html");
+//    if(dir==NULL)
+//        printf("CAN'T opened directory\n");
+//    else
+//        printf("Directory oppened:\n") ;
+//
+//    return 0;
+//}
+
+
 char *get_mime_type(char *name) {
     char *ext = strrchr(name, '.');
     if (!ext) return NULL;
@@ -215,7 +264,7 @@ int Handle(void *socket_id) {
     int sd = *((int *) (socket_id));
     printf("\n\tthread[%d]: using socket %d start to handle\n", pthread_self(), sd);
     char requestMsg[500];
-    char *response=NULL;
+    char *response = NULL;
     char *p;
     bzero(requestMsg, sizeof(requestMsg));
 
@@ -237,28 +286,93 @@ int Handle(void *socket_id) {
             break;
         if (i == 0 && strcmp(token, "GET") != 0) {
             //method not supported 501
+            response = notSupported();
+            goto write;
         }
         if (i == 1) {
-            path= malloc(strlen(token)* sizeof(char ));
+            path = malloc(strlen(token) * sizeof(char));
             strcpy(path, token);
             path[strlen(path)] = '\0';
         }
-        if (i == 2 && (strcmp(token, "HTTP/1.0") != 0 || strcmp(token, "HTTP/1.1") != 0))
+        if (i == 2 && (strcmp(token, "HTTP/1.0") != 0 || strcmp(token, "HTTP/1.1") != 0)) {
             //bad request 400
-            response =badRequest();
+            response = badRequest();
+            goto write;
 
+        }
 
         token = strtok(NULL, " ");
         i++;
     }
-    if (i != 3)
+    if (i != 3) {
         //bad request
-        response=badRequest();
+        response = badRequest();
+        goto write;
+    }
+    i = 0;
+    int k = -1;
+    while (i < strlen(path)) {
+        if (path[i] == '/')
+            k = i;
+        i++;
+    }
+    char *directory;
+    char *filename;
+    if (k != -1) {//TODO: ROOT CHECK
+        directory = calloc(k + 1, sizeof(char));
+        strncpy(directory, path, k);
+        filename = calloc((strlen(path) - k) + 1, sizeof(char));
+        strncpy(filename, path + k, i - k);
+    }
+
+    DIR *dir = opendir(directory);
+
+    if (dir == NULL) {
+        response = forbidden();
+        goto write;
+    }
+    if (dir != NULL && directory[strlen(directory) - 1] != '/') {
+        response = found();
+        closedir(dir);
+        goto write;
+    } else {
+        //5+6 -- check the end if the directory, and if its directory, search for index html and send it, otherwise send what its containing.
+        if (directory[strlen(directory) - 1] == '/') {
+            char absPath[strlen(path) + 11];
+            strcpy(absPath, path);
+            strncat(absPath, "index.html", 11);
+            FILE *file = fopen(absPath, "r");
+            if (file == NULL) {
+                //TODO: CONTENT DIR
 
 
-    int total = 0;
-    if(response!=NULL)
-     total= strlen(response);
+            } else {
+                writeFile(file, absPath, "text/html", sd);
+                closedir(dir);
+                fclose(file);
+                goto exit;
+            }
+        } else {
+            FILE *file = fopen(path, "r");
+            //TODO: check permissions or not found
+            if (file == NULL) {
+                response = forbidden();
+                closedir(dir);
+                goto write;
+            } else {
+            writeFile(file, path, get_mime_type(filename), sd);
+            closedir(dir);
+            fclose(file);
+            goto exit;
+            }
+        }
+    }
+
+
+    int total;
+    write:
+    total = 0;
+    total = strlen(response);
     int done;
     while (total != 0) {
         if ((done = write(sd, response, total)) < 0) {
@@ -268,9 +382,11 @@ int Handle(void *socket_id) {
         total -= done;
     }
 
+
+    exit:
     close(sd);
     printf("thread[%d] exiting\n", pthread_self());
-
+    free(directory);
     free(response);
 
     return 0;
