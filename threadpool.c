@@ -69,7 +69,6 @@ void dispatch(threadpool *from_me, dispatch_fn dispatch_to_here, void *arg) {
 
 
     //1. create and init work_t element
-    //TODO:FREE the allocated memory
     work_t *wt = malloc(sizeof(work_t));
     if (wt == NULL) {
         perror("malloc of work_t failed");
@@ -152,12 +151,10 @@ void *do_work(void *p) {
         }
 
         //5. call the thread routine
-        int status = work->routine(work->arg);
+        work->routine(work->arg);
 
         free(work);
-        if (status != 0) {
-            fprintf(stderr, "WORK THREAD FAILED\n");
-        }
+
     }
 }
 
