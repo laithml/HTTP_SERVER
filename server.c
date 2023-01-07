@@ -269,7 +269,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (listen(sd, max_number_of_request) < 0) {
+    if (listen(sd, 5) < 0) {
         perror("listen\n");
         exit(-1);
     }
@@ -499,6 +499,7 @@ void Handle(void *socket_id) {
     close(sd);
     free(directory);
     free(response);
+    free(path);
 
 
 }
