@@ -105,7 +105,6 @@ void dispatch(threadpool *from_me, dispatch_fn dispatch_to_here, void *arg) {
 
     pthread_cond_signal(&(from_me->q_not_empty));
 
-
 }
 
 void *do_work(void *p) {
@@ -154,7 +153,7 @@ void *do_work(void *p) {
         work->routine(work->arg);
 
         free(work);
-
+        work=NULL;
     }
 }
 
@@ -174,6 +173,13 @@ void destroy_threadpool(threadpool *destroyme) {
         i++;
     }
 
+    while(destroyme->qsize!=0){
+        work_t *temp=destroyme->qhead->next;
+        free(destroyme->qhead);
+        destroyme->qhead=temp;
+        destroyme->qsize--;
+    }
+
     //destroy mutex and conditions
     if (pthread_mutex_destroy(&(destroyme->qlock)) != 0)
         perror("mutex destroy failed");
@@ -181,6 +187,10 @@ void destroy_threadpool(threadpool *destroyme) {
         perror("cond destroy failed");
     if (pthread_cond_destroy(&(destroyme->q_empty)) != 0)
         perror("cond destroy failed");
+
+
+
+
 
     free(destroyme->threads);
     free(destroyme);

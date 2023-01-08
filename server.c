@@ -23,7 +23,7 @@ char *badRequest() {
     char *firstLine = "HTTP/1.0 400 Bad Request\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 113\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>400 Bad Request</TITLE></HEAD>\r\n<BODY><H4>400 Bad request</H4>\r\nBad Request.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = malloc(sizeof(char) * total);
+    char *msg = calloc(total+1,sizeof(char) );
     if(msg==NULL)
         return NULL;
     strcpy(msg, firstLine);
@@ -43,7 +43,7 @@ char *found(char *path) {
     char *secondLine = "\r\nLocation: ";
     char *lastLine = "\\\r\nContent-Type: text/html\r\nContent-Length: 123\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>302 Found</TITLE></HEAD>\r\n<BODY><H4>302 Found</H4>\r\nDirectories must end with a slash.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine)+strlen(path)+strlen(secondLine);
-    char *msg = malloc(sizeof(char) * total);
+    char *msg = calloc(total+1, sizeof(char) );
     if(msg==NULL)
         return NULL;
     strcpy(msg, firstLine);
@@ -64,7 +64,7 @@ char *forbidden() {
     char *firstLine = "HTTP/1.0 403 Forbidden\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 111\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>403 Forbidden</TITLE></HEAD>\r\n<BODY><H4>403 Forbidden</H4>\r\nAccess denied.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = malloc(sizeof(char) * total);
+    char *msg = calloc(total+1,sizeof(char));
     if(msg==NULL)
         return NULL;
     strcpy(msg, firstLine);
@@ -83,7 +83,7 @@ char *notFound() {
     char *firstLine = "HTTP/1.0 404 Not Found\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 112\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>\r\n<BODY><H4>404 Not Found</H4>\r\nFile not found.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = malloc(sizeof(char) * total);
+    char *msg = calloc(total+1, sizeof(char) );
     if(msg==NULL)
         return NULL;
     strcpy(msg, firstLine);
@@ -102,7 +102,7 @@ char *serverError() {
     char *firstLine = "HTTP/1.0 500 Internal Server Error\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 144\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>500 Internal Server Error</TITLE></HEAD>\r\n<BODY><H4>500 Internal Server Error</H4>\r\nSome server side error.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = malloc(sizeof(char) * total);
+    char *msg = calloc(total+1, sizeof(char) );
     if(msg==NULL)
         return NULL;
     strcpy(msg, firstLine);
@@ -121,7 +121,7 @@ char *notSupported() {
     char *firstLine = "HTTP/1.0 500 501 Not supported\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 129\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>501 Not supported</TITLE></HEAD>\r\n<BODY><H4>501 Not supported</H4>\r\nMethod is not supported.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = malloc(sizeof(char) * total);
+    char *msg = calloc(total+1, sizeof(char) );
     if(msg==NULL)
         return NULL;
     strcpy(msg, firstLine);
@@ -171,7 +171,7 @@ void dirContent(DIR *dir,char *path,int sd){
     char lastMod[128];
     strftime(lastMod, sizeof(lastMod), RFC1123FMT, gmtime(&attrib.st_mtime));
 
-    char header[300];
+    char header[300]={0};
     sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: text/html\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, lastMod);
     write(sd, header, sizeof(header));
     struct stat st;
@@ -181,7 +181,9 @@ void dirContent(DIR *dir,char *path,int sd){
     write(sd, body, sizeof(body));
 
     while((dirent=readdir(dir))!=NULL) {
-    char temp[strlen(path)+ strlen(dirent->d_name)+1];
+        bzero(body, sizeof(body));
+        char temp[strlen(path)+ strlen(dirent->d_name)+1];
+        bzero(temp, sizeof(temp));
         strcat(temp,path);
         strcat(temp, dirent->d_name);
         stat(temp,&st);
@@ -194,7 +196,7 @@ void dirContent(DIR *dir,char *path,int sd){
             sprintf(body,"<tr><td><A HREF=\"%s/\">%s</A></td><td>%s</td><td>",dirent->d_name,dirent->d_name,timeStr);
         }
         write(sd, body, strlen(body));
-        bzero(body, sizeof(body));
+
     }
 
     sprintf(body,"</table><HR><ADDRESS>webserver/1.0</ADDRESS></body></html>");
@@ -343,14 +345,14 @@ void Handle(void *socket_id) {
             goto write;
         }
         if (i == 1) {
-            path = malloc(strlen(token)+2 * sizeof(char));
+            path = calloc(strlen(token)+2 , sizeof(char));
             if(path==NULL){
                 response=serverError();
 
                 goto write;
             }
             path[0]='.';
-            strcat(path, token);
+            strncat(path, token,strlen(token));
             path[strlen(path)] = '\0';
         }
         if (i == 2 && (strcmp(token, "HTTP/1.0") != 0 && strcmp(token, "HTTP/1.1") != 0)) {
@@ -499,6 +501,7 @@ void Handle(void *socket_id) {
     close(sd);
     free(directory);
     free(response);
+    free(filename);
     free(path);
 
 
