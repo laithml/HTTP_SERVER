@@ -148,14 +148,16 @@ void writeFile(int file, char *path, char *extension, int sd) {
     char header[300];
     sprintf(header, "HTTP/1.1 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
     write(sd, header, strlen(header));
-    unsigned char readBuffer[2048];
+    unsigned char readBuffer[2048]={0};
 
     size_t i=0;
-    while(i<file_size) {
+    size_t bytes_write;
+    while(i<=file_size) {
         size_t bytes_read = read(file, readBuffer, sizeof(readBuffer));
-        write(sd, readBuffer, bytes_read);
-        i+=bytes_read;
+        bytes_write=write(sd, readBuffer, bytes_read);
+        i+=bytes_write;
     }
+
 
 }
 
@@ -506,5 +508,3 @@ void Handle(void *socket_id) {
 
 
 }
-
-
