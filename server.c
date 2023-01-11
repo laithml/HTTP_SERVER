@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/file.h>
+#include <signal.h>
 #include "threadpool.h"
 
 
@@ -23,8 +24,8 @@ char *badRequest() {
     char *firstLine = "HTTP/1.0 400 Bad Request\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 113\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>400 Bad Request</TITLE></HEAD>\r\n<BODY><H4>400 Bad request</H4>\r\nBad Request.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = calloc(total+1,sizeof(char) );
-    if(msg==NULL)
+    char *msg = calloc(total + 1, sizeof(char));
+    if (msg == NULL)
         return NULL;
     strcpy(msg, firstLine);
     strcat(msg, timeStr);
@@ -42,9 +43,9 @@ char *found(char *path) {
     char *firstLine = "HTTP/1.0 302 Found\r\nServer: webserver/1.0\r\nDate: ";
     char *secondLine = "\r\nLocation: ";
     char *lastLine = "\\\r\nContent-Type: text/html\r\nContent-Length: 123\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>302 Found</TITLE></HEAD>\r\n<BODY><H4>302 Found</H4>\r\nDirectories must end with a slash.\r\n</BODY></HTML>";
-    int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine)+strlen(path)+strlen(secondLine);
-    char *msg = calloc(total+1, sizeof(char) );
-    if(msg==NULL)
+    int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine) + strlen(path) + strlen(secondLine);
+    char *msg = calloc(total + 1, sizeof(char));
+    if (msg == NULL)
         return NULL;
     strcpy(msg, firstLine);
     strcat(msg, timeStr);
@@ -64,8 +65,8 @@ char *forbidden() {
     char *firstLine = "HTTP/1.0 403 Forbidden\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 111\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>403 Forbidden</TITLE></HEAD>\r\n<BODY><H4>403 Forbidden</H4>\r\nAccess denied.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = calloc(total+1,sizeof(char));
-    if(msg==NULL)
+    char *msg = calloc(total + 1, sizeof(char));
+    if (msg == NULL)
         return NULL;
     strcpy(msg, firstLine);
     strcat(msg, timeStr);
@@ -83,8 +84,8 @@ char *notFound() {
     char *firstLine = "HTTP/1.0 404 Not Found\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 112\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>404 Not Found</TITLE></HEAD>\r\n<BODY><H4>404 Not Found</H4>\r\nFile not found.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = calloc(total+1, sizeof(char) );
-    if(msg==NULL)
+    char *msg = calloc(total + 1, sizeof(char));
+    if (msg == NULL)
         return NULL;
     strcpy(msg, firstLine);
     strcat(msg, timeStr);
@@ -102,8 +103,8 @@ char *serverError() {
     char *firstLine = "HTTP/1.0 500 Internal Server Error\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 144\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>500 Internal Server Error</TITLE></HEAD>\r\n<BODY><H4>500 Internal Server Error</H4>\r\nSome server side error.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = calloc(total+1, sizeof(char) );
-    if(msg==NULL)
+    char *msg = calloc(total + 1, sizeof(char));
+    if (msg == NULL)
         return NULL;
     strcpy(msg, firstLine);
     strcat(msg, timeStr);
@@ -118,11 +119,11 @@ char *notSupported() {
     char timeStr[128];
     now = time(NULL);
     strftime(timeStr, sizeof(timeStr), RFC1123FMT, gmtime(&now));
-    char *firstLine = "HTTP/1.0 500 501 Not supported\r\nServer: webserver/1.0\r\nDate: ";
+    char *firstLine = "HTTP/1.0 501 Not supported\r\nServer: webserver/1.0\r\nDate: ";
     char *lastLine = "\r\nContent-Type: text/html\r\nContent-Length: 129\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>501 Not supported</TITLE></HEAD>\r\n<BODY><H4>501 Not supported</H4>\r\nMethod is not supported.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine);
-    char *msg = calloc(total+1, sizeof(char) );
-    if(msg==NULL)
+    char *msg = calloc(total + 1, sizeof(char));
+    if (msg == NULL)
         return NULL;
     strcpy(msg, firstLine);
     strcat(msg, timeStr);
@@ -138,7 +139,7 @@ void writeFile(int file, char *path, char *extension, int sd) {
     stat(path, &attrib);
     char lastMod[128];
     strftime(lastMod, sizeof(lastMod), RFC1123FMT, gmtime(&attrib.st_mtime));
-    int file_size=(int)attrib.st_size;
+    int file_size = (int) attrib.st_size;
 
     time_t now;
     char timeStr[128];
@@ -148,21 +149,21 @@ void writeFile(int file, char *path, char *extension, int sd) {
     char header[300];
     sprintf(header, "HTTP/1.1 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
     write(sd, header, strlen(header));
-    unsigned char readBuffer[2048]={0};
+    unsigned char readBuffer[2048] = {0};
 
-    size_t i=0;
+    size_t i = 0;
     size_t bytes_write;
-    while(i<=file_size) {
+    while (i <= file_size) {
         size_t bytes_read = read(file, readBuffer, sizeof(readBuffer));
-        bytes_write=write(sd, readBuffer, bytes_read);
-        i+=bytes_write;
+        bytes_write = write(sd, readBuffer, bytes_read);
+        i += bytes_write;
     }
 
 
 }
 
 
-void dirContent(DIR *dir,char *path,int sd){
+void dirContent(DIR *dir, char *path, int sd) {
     time_t now;
     char timeStr[128];
     now = time(NULL);
@@ -173,40 +174,38 @@ void dirContent(DIR *dir,char *path,int sd){
     char lastMod[128];
     strftime(lastMod, sizeof(lastMod), RFC1123FMT, gmtime(&attrib.st_mtime));
 
-    char header[300]={0};
+    char header[300] = {0};
     sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: text/html\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, lastMod);
     write(sd, header, sizeof(header));
     struct stat st;
     struct dirent *dirent;
-    char body[1024]={0};
-    sprintf(body,"<html><head><title>Index of %s</title></head>\r\n<body><h4>Index of %s</h4><hr><table CELLSPACING=15><tr><th>Name</th><th>Last-Modified</th><th>Size</th></tr>",path,path);
+    char body[1024] = {0};
+    sprintf(body, "<html><head><title>Index of %s</title></head>\r\n<body><h4>Index of %s</h4><hr><table CELLSPACING=15><tr><th>Name</th><th>Last-Modified</th><th>Size</th></tr>", path, path);
     write(sd, body, sizeof(body));
 
-    while((dirent=readdir(dir))!=NULL) {
+    while ((dirent = readdir(dir)) != NULL) {
         bzero(body, sizeof(body));
-        char temp[strlen(path)+ strlen(dirent->d_name)+1];
+        char temp[strlen(path) + strlen(dirent->d_name) + 1];
         bzero(temp, sizeof(temp));
-        strcat(temp,path);
+        strcat(temp, path);
         strcat(temp, dirent->d_name);
-        stat(temp,&st);
-        bzero(timeStr,sizeof(timeStr));
+        stat(temp, &st);
+        bzero(timeStr, sizeof(timeStr));
         strftime(timeStr, sizeof(timeStr), RFC1123FMT, gmtime(&st.st_mtime));
 
-        if(!S_ISDIR(st.st_mode)){
-            sprintf(body,"<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%d</td></tr>",dirent->d_name,dirent->d_name,timeStr,(int)st.st_size);
-        }else{
-            sprintf(body,"<tr><td><A HREF=\"%s/\">%s</A></td><td>%s</td><td>",dirent->d_name,dirent->d_name,timeStr);
+        if (!S_ISDIR(st.st_mode)) {
+            sprintf(body, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%d</td></tr>", dirent->d_name, dirent->d_name, timeStr, (int) st.st_size);
+        } else {
+            sprintf(body, "<tr><td><A HREF=\"%s/\">%s</A></td><td>%s</td><td>", dirent->d_name, dirent->d_name, timeStr);
         }
         write(sd, body, strlen(body));
 
     }
 
-    sprintf(body,"</table><HR><ADDRESS>webserver/1.0</ADDRESS></body></html>");
+    sprintf(body, "</table><HR><ADDRESS>webserver/1.0</ADDRESS></body></html>");
     write(sd, body, strlen(body));
     closedir(dir);
 }
-
-
 
 
 void Handle(void *socket_id);
@@ -223,6 +222,7 @@ int isDigit(char *string) {
 }
 
 int main(int argc, char **argv) {
+    signal(SIGPIPE, SIG_IGN);
     if (argc != 4) {
         USAGE;
         exit(EXIT_FAILURE);
@@ -273,7 +273,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (listen(sd, 5) < 0) {
+    if (listen(sd, max_number_of_request) < 0) {
         perror("listen\n");
         exit(-1);
     }
@@ -340,27 +340,27 @@ void Handle(void *socket_id) {
         if (i == 0 && strcmp(token, "GET") != 0) {
             //method not supported 501
             response = notSupported();
-            if(response ==NULL){
+            if (response == NULL) {
                 response = serverError();
                 goto write;
             }
             goto write;
         }
         if (i == 1) {
-            path = calloc(strlen(token)+2 , sizeof(char));
-            if(path==NULL){
-                response=serverError();
+            path = calloc(strlen(token) + 2, sizeof(char));
+            if (path == NULL) {
+                response = serverError();
 
                 goto write;
             }
-            path[0]='.';
-            strncat(path, token,strlen(token));
+            path[0] = '.';
+            strncat(path, token, strlen(token));
             path[strlen(path)] = '\0';
         }
         if (i == 2 && (strcmp(token, "HTTP/1.0") != 0 && strcmp(token, "HTTP/1.1") != 0)) {
             //bad request 400
             response = badRequest();
-            if(response ==NULL){
+            if (response == NULL) {
                 response = serverError();
                 goto write;
             }
@@ -374,7 +374,7 @@ void Handle(void *socket_id) {
     if (i != 3) {
         //bad request
         response = badRequest();
-        if(response ==NULL){
+        if (response == NULL) {
             response = serverError();
             goto write;
         }
@@ -389,99 +389,117 @@ void Handle(void *socket_id) {
     }
     char *directory;
     char *filename;
+
     if (k != -1) {
         directory = calloc(k + 2, sizeof(char));
-        if(directory==NULL) {
+        if (directory == NULL) {
             response = serverError();
             goto write;
         }
-        strncat(directory, path, k+1);
-        filename = calloc((strlen(path) - k+1) + 1, sizeof(char));
-        if(filename==NULL) {
+        strncat(directory, path, k + 1);
+        filename = calloc((strlen(path) - k + 1) + 1, sizeof(char));
+        if (filename == NULL) {
             response = serverError();
             goto write;
         }
-        strncpy(filename, path + k+1, i - k-1);
+        strncpy(filename, path + k + 1, i - k - 1);
     }
     struct stat attr;
-    if(stat(path, &attr)<0){
+    if (stat(path, &attr) < 0) {
         response = notFound();
-        if(response ==NULL){
+        if (response == NULL) {
             response = serverError();
             goto write;
         }
         goto write;
-    }if(S_ISREG(attr.st_mode)){
-        if(!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) {
-            response = forbidden();
-            if(response ==NULL){
-                response = serverError();
-                goto write;
-            }
-            goto write;
-        }
-    }else if(S_ISDIR(attr.st_mode)){
-        if(!(attr.st_mode & S_IXOTH) ){
-            response=forbidden();
-            if(response ==NULL){
-                response = serverError();
-                goto write;
-            }
-            goto write;
-        }
-
-
     }
-    DIR *dir = opendir(directory);
+    if (S_ISREG(attr.st_mode)) {
+        if (!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) {
+            response = forbidden();
+            if (response == NULL) {
+                response = serverError();
+                goto write;
+            }
+            goto write;
+        }
+    } else if (S_ISDIR(attr.st_mode)) {
+        if (!(attr.st_mode & S_IXOTH)) {
+            response = forbidden();
+            if (response == NULL) {
+                response = serverError();
+                goto write;
+            }
+            goto write;
+        }
+    }
 
+    if (directory == NULL) {
+        response = found(path);
+        if (response == NULL) {
+            response = serverError();
+        }
+        goto write;
+    }
+    DIR *temp = opendir(path);
+    if (temp != NULL && path[strlen(path) - 1] != '/') {
+        response = found(path);
+        if (response == NULL) {
+            response = serverError();
+            goto write;
+        }
+        closedir(temp);
+        goto write;
+    }
+
+    DIR *dir = opendir(directory);
     if (dir == NULL) {
         response = notFound();
-        if(response ==NULL){
+        if (response == NULL)
             response = serverError();
-            goto write;
-        }
+
         goto write;
     }
-    if (dir != NULL && directory[strlen(directory) - 1] != '/') {
-        response = found(directory);
-        if(response ==NULL){
-            response = serverError();
+    //5+6 -- check the end if the directory, and if its directory, search for index html and send it, otherwise send what its containing.
+    if (directory[strlen(directory) - 1] == '/' && strcmp(filename, "") == 0) {
+        char absPath[strlen(path) + 11];
+        strcpy(absPath, path);
+        strncat(absPath, "index.html", 11);
+        stat(absPath, &attr);
+
+        if (!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) {
+            response = forbidden();
+            if (response == NULL) {
+                response = serverError();
+                goto write;
+            }
             goto write;
         }
-        closedir(dir);
-        goto write;
-    } else {
-        //5+6 -- check the end if the directory, and if its directory, search for index html and send it, otherwise send what its containing.
-        if (directory[strlen(directory) - 1] == '/'&& strcmp(filename,"")==0) {
-            char absPath[strlen(path) + 11];
-            strcpy(absPath, path);
-            strncat(absPath, "index.html", 11);
-            int file = open(absPath, O_RDONLY);
-            if (file<0) {
-                dirContent(dir,path,sd);
-                goto exit;
-            } else {
-                writeFile(file, absPath, "text/html", sd);
-                closedir(dir);
-                close(file);
-                goto exit;
-            }
+
+        int file = open(absPath, O_RDONLY);
+        if (file < 0) {
+            dirContent(dir, path, sd);
+            goto exit;
         } else {
-            int file = open(path, O_RDONLY);
-            if (file < 0) {
-                response = notFound();
-                if(response ==NULL){
-                    response = serverError();
-                    goto write;
-                }
-                closedir(dir);
+            writeFile(file, absPath, "text/html", sd);
+            closedir(dir);
+            close(file);
+            goto exit;
+        }
+    } else {
+        int file = open(path, O_RDONLY);
+        if (file < 0) {
+            response = notFound();
+            if (response == NULL) {
+                response = serverError();
                 goto write;
-            } else {
+            }
+            closedir(dir);
+            goto write;
+        } else {
             writeFile(file, path, get_mime_type(filename), sd);
             closedir(dir);
             close(file);
             goto exit;
-            }
         }
     }
 
