@@ -433,13 +433,6 @@ void Handle(void *socket_id) {
         }
     }
 
-    if (directory == NULL) {
-        response = found(path);
-        if (response == NULL) {
-            response = serverError();
-        }
-        goto write;
-    }
     DIR *temp = opendir(path);
     if (temp != NULL && path[strlen(path) - 1] != '/') {
         response = found(path);
