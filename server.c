@@ -128,7 +128,7 @@ char *notSupported() {
 }
 
 void writeFile(int file, char *path, char *extension, int sd) {
-
+    printf("thread[%d] writing\n",pthread_self());
     struct stat attrib;
     stat(path, &attrib);
     char lastMod[128];
@@ -143,16 +143,15 @@ void writeFile(int file, char *path, char *extension, int sd) {
     char header[300];
     sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
     write(sd, header, strlen(header));
-    unsigned char readBuffer[2048] = {0};
+    unsigned char readBuffer[4096];
 
-    size_t i = 0;
-    size_t bytes_write;
+
     size_t bytes_read;
-    while (i<file_size) {
-        bytes_read =read(file, readBuffer, sizeof(readBuffer));
-        bytes_write = write(sd, readBuffer, bytes_read);
-        i += bytes_write;
+    while ((bytes_read = read(file, readBuffer, 4096))>   0) {
+        write(sd, readBuffer, bytes_read);
+        bzero(readBuffer,4096);
     }
+
 }
 
 
