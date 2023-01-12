@@ -31,7 +31,6 @@ char *badRequest() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n", msg);
     return msg;
 }
 
@@ -53,7 +52,6 @@ char *found(char *path) {
     strcat(msg, path);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n", msg);
     return msg;
 }
 
@@ -72,7 +70,6 @@ char *forbidden() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n", msg);
     return msg;
 }
 
@@ -91,7 +88,6 @@ char *notFound() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n", msg);
     return msg;
 }
 
@@ -110,7 +106,6 @@ char *serverError() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n", msg);
     return msg;
 }
 
@@ -129,7 +124,6 @@ char *notSupported() {
     strcat(msg, timeStr);
     strcat(msg, lastLine);
     msg[strlen(msg)] = '\0';
-    printf("%s\n\n\n\n", msg);
     return msg;
 }
 
@@ -147,19 +141,18 @@ void writeFile(int file, char *path, char *extension, int sd) {
     strftime(timeStr, sizeof(timeStr), RFC1123FMT, gmtime(&now));
 
     char header[300];
-    sprintf(header, "HTTP/1.1 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
+    sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
     write(sd, header, strlen(header));
     unsigned char readBuffer[2048] = {0};
 
     size_t i = 0;
     size_t bytes_write;
-    while (i <= file_size) {
-        size_t bytes_read = read(file, readBuffer, sizeof(readBuffer));
+    size_t bytes_read;
+    while (i<file_size) {
+        bytes_read =read(file, readBuffer, sizeof(readBuffer));
         bytes_write = write(sd, readBuffer, bytes_read);
         i += bytes_write;
     }
-
-
 }
 
 
@@ -222,7 +215,7 @@ int isDigit(char *string) {
 }
 
 int main(int argc, char **argv) {
-    signal(SIGPIPE, SIG_IGN);
+//    signal(SIGPIPE, SIG_IGN);
     if (argc != 4) {
         USAGE;
         exit(EXIT_FAILURE);
@@ -273,7 +266,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (listen(sd, max_number_of_request) < 0) {
+    if (listen(sd, 5) < 0) {
         perror("listen\n");
         exit(-1);
     }
@@ -330,7 +323,6 @@ void Handle(void *socket_id) {
         }
         bzero(requestMsg, sizeof(requestMsg));
     }
-    printf("request=%s\r\n", requestMsg);
     char *token = strtok(requestMsg, " ");
     char *path = NULL;
     int i = 0;
@@ -404,45 +396,54 @@ void Handle(void *socket_id) {
         }
         strncpy(filename, path + k + 1, i - k - 1);
     }
-    struct stat attr;
-    if (stat(path, &attr) < 0) {
-        response = notFound();
-        if (response == NULL) {
-            response = serverError();
-            goto write;
+    char tempPath[500];
+    i=0;
+    while(i<strlen(path)) {
+        while(path[i] != '/'&&i < strlen(path)){
+            tempPath[i] = path[i];
+            i++;
         }
-        goto write;
-    }
-    if (S_ISREG(attr.st_mode)) {
-        if (!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) {
-            response = forbidden();
+        struct stat attr;
+        if (stat(path, &attr) < 0) {
+            response = notFound();
             if (response == NULL) {
                 response = serverError();
                 goto write;
             }
             goto write;
         }
-    } else if (S_ISDIR(attr.st_mode)) {
-        if (!(attr.st_mode & S_IXOTH)) {
-            response = forbidden();
-            if (response == NULL) {
-                response = serverError();
+        if (S_ISREG(attr.st_mode)) {
+            if (!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) {
+                response = forbidden();
+                if (response == NULL) {
+                    response = serverError();
+                    goto write;
+                }
                 goto write;
             }
-            goto write;
+        } else if (S_ISDIR(attr.st_mode)) {
+            if (!(attr.st_mode & S_IXOTH)) {
+                response = forbidden();
+                if (response == NULL) {
+                    response = serverError();
+                    goto write;
+                }
+                goto write;
+            }
         }
+        tempPath[i++] = '/';
     }
 
     DIR *temp = opendir(path);
     if (temp != NULL && path[strlen(path) - 1] != '/') {
         response = found(path);
-        if (response == NULL) {
+        if (response == NULL)
             response = serverError();
-            goto write;
-        }
+
         closedir(temp);
         goto write;
     }
+    closedir(temp);
 
     DIR *dir = opendir(directory);
     if (dir == NULL) {
@@ -457,16 +458,6 @@ void Handle(void *socket_id) {
         char absPath[strlen(path) + 11];
         strcpy(absPath, path);
         strncat(absPath, "index.html", 11);
-        stat(absPath, &attr);
-
-        if (!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) {
-            response = forbidden();
-            if (response == NULL) {
-                response = serverError();
-                goto write;
-            }
-            goto write;
-        }
 
         int file = open(absPath, O_RDONLY);
         if (file < 0) {
