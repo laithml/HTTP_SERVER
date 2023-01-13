@@ -14,7 +14,7 @@
 #define USAGE printf("Usage: server <port> <pool-size> <max-number-of-request>\n")
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
 
-
+//bad request function
 char *badRequest() {
     time_t now;
     char timeStr[128];
@@ -32,7 +32,7 @@ char *badRequest() {
     msg[strlen(msg)] = '\0';
     return msg;
 }
-
+//found function
 char *found(char *path) {
     time_t now;
     char timeStr[128];
@@ -40,7 +40,7 @@ char *found(char *path) {
     strftime(timeStr, sizeof(timeStr), RFC1123FMT, gmtime(&now));
     char *firstLine = "HTTP/1.0 302 Found\r\nServer: webserver/1.0\r\nDate: ";
     char *secondLine = "\r\nLocation: ";
-    char *lastLine = "\\\r\nContent-Type: text/html\r\nContent-Length: 123\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>302 Found</TITLE></HEAD>\r\n<BODY><H4>302 Found</H4>\r\nDirectories must end with a slash.\r\n</BODY></HTML>";
+    char *lastLine = "/\r\nContent-Type: text/html\r\nContent-Length: 123\r\nConnection: Close\r\n\r\n<HTML><HEAD><TITLE>302 Found</TITLE></HEAD>\r\n<BODY><H4>302 Found</H4>\r\nDirectories must end with a slash.\r\n</BODY></HTML>";
     int total = strlen(timeStr) + strlen(firstLine) + strlen(lastLine) + strlen(path) + strlen(secondLine);
     char *msg = calloc(total + 1, sizeof(char));
     if (msg == NULL)
@@ -53,7 +53,7 @@ char *found(char *path) {
     msg[strlen(msg)] = '\0';
     return msg;
 }
-
+//forbidden function
 char *forbidden() {
     time_t now;
     char timeStr[128];
@@ -71,7 +71,7 @@ char *forbidden() {
     msg[strlen(msg)] = '\0';
     return msg;
 }
-
+//not found function
 char *notFound() {
     time_t now;
     char timeStr[128];
@@ -89,7 +89,7 @@ char *notFound() {
     msg[strlen(msg)] = '\0';
     return msg;
 }
-
+//server error function
 char *serverError() {
     time_t now;
     char timeStr[128];
@@ -125,7 +125,7 @@ char *notSupported() {
     msg[strlen(msg)] = '\0';
     return msg;
 }
-
+//send file to the client
 void writeFile(int file, char *path, char *extension, int sd) {
     struct stat attrib;
     stat(path, &attrib);
@@ -138,21 +138,26 @@ void writeFile(int file, char *path, char *extension, int sd) {
     now = time(NULL);
     strftime(timeStr, sizeof(timeStr), RFC1123FMT, gmtime(&now));
 
-    char header[300];
+    char header[300+128+128];
     sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
     write(sd, header, strlen(header));
     unsigned char readBuffer[512];
-
-
+    memset(readBuffer, 0,sizeof(readBuffer));
     size_t bytes_read;
-    while ((bytes_read = read(file, readBuffer, 512))>   0) {
-        write(sd, readBuffer, bytes_read);
-        bzero(readBuffer,512);
+
+    while ((bytes_read = read(file, readBuffer, sizeof(readBuffer))) > 0) {
+       if( (write(sd, readBuffer, bytes_read))<0){
+           perror(" write here\n");
+           break;
+       }
+        memset(readBuffer, 0, sizeof(readBuffer));
+        bytes_read=0;
     }
+
 
 }
 
-
+//send the directory Content to the client
 void dirContent(DIR *dir, char *path, int sd) {
     time_t now;
     char timeStr[128];
@@ -164,7 +169,7 @@ void dirContent(DIR *dir, char *path, int sd) {
     char lastMod[128];
     strftime(lastMod, sizeof(lastMod), RFC1123FMT, gmtime(&attrib.st_mtime));
 
-    char header[300] = {0};
+    char header[300+128+128] = {0};
     sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: text/html\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, lastMod);
     write(sd, header, sizeof(header));
     struct stat st;
@@ -269,16 +274,12 @@ int main(int argc, char **argv) {
 
 
     int i = 0;
+    int connection;
     while (i < max_number_of_request) {
         struct sockaddr_in client;
         socklen_t len = sizeof(client);
-        int connection;
-        if ((connection = accept(sd, (struct sockaddr *) &client, &len)) == -1) {
-            perror("accept\n");
-            exit(EXIT_FAILURE);
-        } else
-            dispatch(tp, (dispatch_fn) Handle, (void *) &connection);
-
+        connection = accept(sd, (struct sockaddr *) &client, &len);
+        dispatch(tp, (dispatch_fn) Handle, (void *) &connection);
         i++;
     }
     destroy_threadpool(tp);
@@ -304,160 +305,151 @@ char *get_mime_type(char *name) {
 }
 
 void Handle(void *socket_id) {
-    printf("thread %d is handling request", (int) pthread_self());
-    int sd = *((int *) (socket_id));
+    int sd = *((int *) (socket_id)); // cast the void pointer to int pointer and get the socket descriptor
     char requestMsg[500];
     char *response = NULL;
     char *p;
-    bzero(requestMsg, sizeof(requestMsg));
+    bzero(requestMsg, sizeof(requestMsg)); // set all elements of requestMsg to 0
 
     //read the request from the socket
-    while ((read(sd, requestMsg, sizeof(requestMsg)) >= 0)) {
+    while ((read(sd, requestMsg, sizeof(requestMsg)) >= 0)) { // read the request message from the socket
         p = strstr(requestMsg, "\r\n");
         if (p != NULL) {
-            strtok(requestMsg, "\r\n");
+            strtok(requestMsg, "\r\n"); // break the message at the first occurrence of "\r\n"
             break;
         }
-        bzero(requestMsg, sizeof(requestMsg));
+        bzero(requestMsg, sizeof(requestMsg)); // set all elements of requestMsg to 0
     }
-    printf("%s\n",requestMsg);
-    char *token = strtok(requestMsg, " ");
+    char *token = strtok(requestMsg, " "); // tokenize the request message by space
     char *path = NULL;
     int i = 0;
-    while (token != NULL) {
+    while (token != NULL) { // while there are still tokens left
         if (i > 2)
             break;
-        if (i == 0 && strcmp(token, "GET") != 0) {
+        if (i == 0 && strcmp(token, "GET") != 0) { // check if the method is GET
             //method not supported 501
             response = notSupported();
             if (response == NULL) {
                 response = serverError();
-                goto write;
             }
-            goto write;
-        }
-        if (i == 1) {
-            path = calloc(strlen(token) + 2, sizeof(char));
+            write(sd, response, strlen(response));
+            goto exit;
+        }if (i == 1) {
+            path = calloc(strlen(token) + 2, sizeof(char)); // allocate memory for the path
             if (path == NULL) {
                 response = serverError();
 
-                goto write;
+                write(sd, response, strlen(response));
+                goto exit;
             }
             path[0] = '.';
-            strncat(path, token, strlen(token));
+            strncat(path, token, strlen(token)); // concatenate '.' and the path
             path[strlen(path)] = '\0';
-        }
-        if (i == 2 && (strcmp(token, "HTTP/1.0") != 0 && strcmp(token, "HTTP/1.1") != 0)) {
+        }if (i == 2 && (strcmp(token, "HTTP/1.0") != 0 && strcmp(token, "HTTP/1.1") != 0)) { // check if the HTTP version is supported
             //bad request 400
             response = badRequest();
             if (response == NULL) {
                 response = serverError();
-                goto write;
             }
-            goto write;
+            write(sd, response, strlen(response));
+            goto exit;
 
         }
-
         token = strtok(NULL, " ");
         i++;
-    }
-    if (i != 3) {
+    }if (i != 3) { // check if the request is properly formatted
         //bad request
         response = badRequest();
         if (response == NULL) {
             response = serverError();
-            goto write;
         }
-        goto write;
+        write(sd, response, strlen(response));
+        goto exit;
     }
     i = 0;
     int k = -1;
-    while (i < strlen(path)) {
+    while (i < strlen(path)) { // find the last occurrence of '/'
         if (path[i] == '/')
             k = i;
         i++;
     }
-    char *directory;
-    char *filename;
+    char *directory=NULL; // variable to hold the directory name
+    char *filename=NULL;  // variable to hold the file name
 
     if (k != -1) {
-        directory = calloc(k + 2, sizeof(char));
+        directory = calloc(k + 2, sizeof(char)); // allocate memory for directory name
         if (directory == NULL) {
             response = serverError();
-            goto write;
+            write(sd, response, strlen(response));
+            goto exit;
         }
-        strncat(directory, path, k + 1);
-        filename = calloc((strlen(path) - k + 1) + 1, sizeof(char));
+        strncat(directory, path, k + 1); // concatenate the directory name
+        filename = calloc((strlen(path) - k + 1) + 1, sizeof(char)); // allocate memory for the file name
         if (filename == NULL) {
             response = serverError();
-            goto write;
+            write(sd, response, strlen(response));
+            goto exit;
         }
-        strncpy(filename, path + k + 1, i - k - 1);
+        strncpy(filename, path + k + 1, i - k - 1); // copy the file name from the path
     }
+
     char tempPath[500];
-    i=0;
-    while(i<strlen(path)) {
-        while(path[i] != '/'&&i < strlen(path)){
+    i = 0;
+    while (i < strlen(path)) {
+        while (path[i] != '/' && i < strlen(path)) {
             tempPath[i] = path[i];
             i++;
         }
         struct stat attr;
-        if (stat(path, &attr) < 0) {
+        if (stat(path, &attr) < 0) { // check the status of the file
             response = notFound();
-            if (response == NULL) {
+            if (response == NULL)
                 response = serverError();
-                goto write;
-            }
-            goto write;
-        }
-        if (S_ISREG(attr.st_mode)) {
-            if (!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) {
+            write(sd, response, strlen(response));
+            goto exit;
+        }if (S_ISREG(attr.st_mode)) { // if it's a regular file
+            if (!((attr.st_mode & S_IROTH) && (attr.st_mode & S_IRGRP) && (attr.st_mode & S_IRUSR))) { // check if the file is readable
                 response = forbidden();
-                if (response == NULL) {
+                if (response == NULL)
                     response = serverError();
-                    goto write;
-                }
-                goto write;
+                write(sd, response, strlen(response));
+                goto exit;
             }
-        } else if (S_ISDIR(attr.st_mode)) {
-            if (!(attr.st_mode & S_IXOTH)) {
+        } else if (S_ISDIR(attr.st_mode)) { // if it's a directory
+            if (!(attr.st_mode & S_IXOTH)) { // check if the directory is executable
                 response = forbidden();
-                if (response == NULL) {
+                if (response == NULL)
                     response = serverError();
-                    goto write;
-                }
-                goto write;
+                write(sd, response, strlen(response));
+                goto exit;
             }
         }
         tempPath[i++] = '/';
     }
-
     DIR *temp = opendir(path);
     if (temp != NULL && path[strlen(path) - 1] != '/') {
         response = found(path);
         if (response == NULL)
             response = serverError();
-
         closedir(temp);
-        goto write;
+        write(sd, response, strlen(response));
+        goto exit;
     }
-    if(temp!=NULL)
-     closedir(temp);
-
+    if (temp != NULL)
+        closedir(temp);
     DIR *dir = opendir(directory);
     if (dir == NULL) {
         response = notFound();
         if (response == NULL)
             response = serverError();
-
-        goto write;
+        write(sd, response, strlen(response));
+        goto exit;
     }
     //5+6 -- check the end if the directory, and if its directory, search for index html and send it, otherwise send what its containing.
     if (directory[strlen(directory) - 1] == '/' && strcmp(filename, "") == 0) {
         char absPath[strlen(path) + 11];
         strcpy(absPath, path);
         strncat(absPath, "index.html", 11);
-
         int file = open(absPath, O_RDONLY);
         if (file < 0) {
             dirContent(dir, path, sd);
@@ -472,12 +464,11 @@ void Handle(void *socket_id) {
         int file = open(path, O_RDONLY);
         if (file < 0) {
             response = notFound();
-            if (response == NULL) {
+            if (response == NULL)
                 response = serverError();
-                goto write;
-            }
             closedir(dir);
-            goto write;
+            write(sd, response, strlen(response));
+            goto exit;
         } else {
             writeFile(file, path, get_mime_type(filename), sd);
             closedir(dir);
@@ -486,27 +477,14 @@ void Handle(void *socket_id) {
         }
     }
 
-
-    int total;
-    write:
-    total = 0;
-    total = strlen(response);
-    int done;
-    while (total != 0) {
-        if ((done = write(sd, response, total)) < 0) {
-            perror("write failed\n");
-            break;
-        }
-        total -= done;
-    }
-
-
     exit:
     close(sd);
-    free(directory);
-    free(response);
-    free(filename);
-    free(path);
-
-
+    if(directory!=NULL)
+        free(directory);
+    if(response!=NULL)
+        free(response);
+    if(filename != NULL)
+        free(filename);
+    if(path != NULL)
+        free(path);
 }

@@ -1,5 +1,16 @@
 #include "threadpool.h"
 #include <stdlib.h>
+
+/**
+ * create_threadpool creates a fixed-sized thread
+ * pool.  If the function succeeds, it returns a (non-NULL)
+ * "threadpool", else it returns NULL.
+ * this function should:
+ * 1. input sanity check
+ * 2. initialize the threadpool structure
+ * 3. initialized mutex and conditional variables
+ * 4. create the threads, the thread init function is do_work and its argument is the initialized threadpool.
+ */
 threadpool *create_threadpool(int num_threads_in_pool) {
     if (num_threads_in_pool <= 0 || num_threads_in_pool > MAXT_IN_POOL) {
         return NULL;
@@ -49,6 +60,17 @@ threadpool *create_threadpool(int num_threads_in_pool) {
     }
     return pool;
 }
+/**
+ * dispatch enter a "job" of type work_t into the queue.
+ * when an available thread takes a job from the queue, it will
+ * call the function "dispatch_to_here" with argument "arg".
+ * this function should:
+ * 1. create and init work_t element
+ * 2. lock the mutex
+ * 3. add the work_t element to the queue
+ * 4. unlock mutex
+ *
+ */
 void dispatch(threadpool *from_me, dispatch_fn dispatch_to_here, void *arg) {
     //write me
     if (from_me == NULL || dispatch_to_here == NULL) {
@@ -78,7 +100,11 @@ void dispatch(threadpool *from_me, dispatch_fn dispatch_to_here, void *arg) {
     from_me->qsize++;
     pthread_mutex_unlock(&from_me->qlock);
 }
-
+/**
+ * destroy_threadpool kills the threadpool, causing
+ * all threads in it to commit suicide, and then
+ * frees all the memory associated with the threadpool.
+ */
 void destroy_threadpool(threadpool *destroyme) {
     //write me
     if (destroyme == NULL) {
@@ -111,6 +137,16 @@ void destroy_threadpool(threadpool *destroyme) {
     }
     free(destroyme);
 }
+/**
+ * The work function of the thread
+ * this function should:
+ * 1. lock mutex
+ * 2. if the queue is empty, wait
+ * 3. take the first element from the queue (work_t)
+ * 4. unlock mutex
+ * 5. call the thread routine
+ *
+ */
 void* do_work(void* p){
     threadpool *pool = (threadpool *) p;
     while (1) {
