@@ -1,0 +1,24 @@
+ID: 211353297
+Author: Laith Muhtaseb, ID: 211353297
+EX3 – HTTP SERVER
+files: server.c threadpool.c and README.
+
+Description:
+This is a simple HTTP server implementation using a thread pool and the C programming language.
+It takes in three command line arguments: the port number, the pool size, and the maximum number of requests that the server can handle.
+
+The main function first checks if the number of command line arguments is 4, and that the arguments passed in are valid integers.
+If not, it will print the usage of the program and exit.
+
+The program then creates a socket and binds it to the specified port number.
+It then initializes the thread pool with the specified pool size and starts listening for incoming connections.
+
+For each incoming connection, the program creates a new thread to handle the request by calling the Handle function. The Handle function reads the request message and parses it to extract the request method, path, and HTTP version.
+It then checks if the method is GET, the path is valid, and the HTTP version is supported.
+
+If the request is valid, the program will check if the path points to a file or a directory and respond with the appropriate response.
+If the path points to a directory, it will look for the index.html file and send it if it exists. If not, it will send a list of the files in the directory. If the path points to a file, the program will send the file with the appropriate MIME type.
+
+If the request is invalid, the program will send an error response.
+
+USAGE: server <port> <pool-size> <max-number-of-request>
