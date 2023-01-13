@@ -143,19 +143,21 @@ void writeFile(int file, char *path, char *extension, int sd) {
     char header[300];
     sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
     write(sd, header, strlen(header));
-    unsigned char readBuffer[4096];
+    unsigned char readBuffer[2048];
 
 
     size_t bytes_read;
-    while ((bytes_read = read(file, readBuffer, 4096))>   0) {
+    while ((bytes_read = read(file, readBuffer, 512))>   0) {
+        usleep(100);
         write(sd, readBuffer, bytes_read);
-        bzero(readBuffer,4096);
+        bzero(readBuffer,512);
     }
 
 }
 
 
 void dirContent(DIR *dir, char *path, int sd) {
+    printf("thread[%d]\n",pthread_self());
     time_t now;
     char timeStr[128];
     now = time(NULL);
@@ -190,6 +192,7 @@ void dirContent(DIR *dir, char *path, int sd) {
         } else {
             sprintf(body, "<tr><td><A HREF=\"%s/\">%s</A></td><td>%s</td><td>", dirent->d_name, dirent->d_name, timeStr);
         }
+        usleep(100);
         write(sd, body, strlen(body));
 
     }
@@ -214,7 +217,7 @@ int isDigit(char *string) {
 }
 
 int main(int argc, char **argv) {
-//    signal(SIGPIPE, SIG_IGN);
+    signal(SIGPIPE, SIG_IGN);
     if (argc != 4) {
         USAGE;
         exit(EXIT_FAILURE);
@@ -265,7 +268,7 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-    if (listen(sd, 5) < 0) {
+    if (listen(sd, max_number_of_request) < 0) {
         perror("listen\n");
         exit(-1);
     }
@@ -322,6 +325,7 @@ void Handle(void *socket_id) {
         }
         bzero(requestMsg, sizeof(requestMsg));
     }
+    printf("%s\n",requestMsg);
     char *token = strtok(requestMsg, " ");
     char *path = NULL;
     int i = 0;
@@ -442,7 +446,8 @@ void Handle(void *socket_id) {
         closedir(temp);
         goto write;
     }
-    closedir(temp);
+    if(temp!=NULL)
+     closedir(temp);
 
     DIR *dir = opendir(directory);
     if (dir == NULL) {
@@ -489,12 +494,14 @@ void Handle(void *socket_id) {
 
     int total;
     write:
+    printf("thread[%d]\n", pthread_self());
     total = 0;
     total = strlen(response);
     int done;
     while (total != 0) {
         if ((done = write(sd, response, total)) < 0) {
             perror("write failed\n");
+            break;
         }
         total -= done;
     }

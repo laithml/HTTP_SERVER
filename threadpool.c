@@ -1,139 +1,196 @@
-#include "threadpool.h"
+//
+// Created by Laith on 26/12/2022.
+//
+
 #include <stdlib.h>
 #include <stdio.h>
-#include <unistd.h>
+#include "threadpool.h"
 
+threadpool *create_threadpool(int num_threads_in_pool) {
+    if (num_threads_in_pool <= 0 || num_threads_in_pool > MAXT_IN_POOL) {
+        return NULL;
+    }
+    threadpool *tp = malloc(sizeof(threadpool));
+    if (tp == NULL) {
+        perror("malloc threadpool");
+        return NULL;
+    }
+    tp->num_threads = num_threads_in_pool;
+    tp->qsize = 0;
+    tp->qhead = NULL;
+    tp->qtail = NULL;
+    tp->shutdown = 0;
+    tp->dont_accept = 0;
 
-
-threadpool* create_threadpool(int num_threads_in_pool){
-
-    if(num_threads_in_pool>MAXT_IN_POOL || num_threads_in_pool<=0){
-        printf("Usage: threadpool <pool-size> <max-number-of-jobs>\n");
+    tp->threads = malloc(sizeof(pthread_t) * num_threads_in_pool);
+    if (tp->threads == NULL) {
+        perror("malloc threads");
+        free(tp);
         return NULL;
     }
 
-    threadpool* pool=(threadpool*)malloc(sizeof(threadpool));
-    if(pool==NULL){
-        perror("Cannot allocate memory");
+    //initialize the mutex and condition for the thread pool
+    if (pthread_cond_init(&(tp->q_empty), NULL) != 0) {
+        perror("mutex init failed");
+        free(tp->threads);
+        free(tp);
+        return NULL;
+    }
+    if (pthread_cond_init(&(tp->q_not_empty), NULL) != 0) {
+        perror("mutex init failed");
+        free(tp->threads);
+        free(tp);
+        return NULL;
+    }
+    if (pthread_mutex_init(&(tp->qlock), NULL) != 0) {
+        perror("mutex init failed");
+        free(tp->threads);
+        free(tp);
         return NULL;
     }
 
-    pool->num_threads=num_threads_in_pool;
-    pool->qsize=0;
-    pool->qhead=NULL;
-    pool->qtail=NULL;
-    pool->shutdown=0;
-    pool->dont_accept=0;
-    pthread_mutex_init(&pool->qlock,NULL);
-    pthread_cond_init(&pool->q_not_empty,NULL);
-    pthread_cond_init(&pool->q_empty,NULL);
-    pool->threads=(pthread_t*)malloc(sizeof(pthread_t)*num_threads_in_pool);
-
-    int status;
-    for(int i=0 ; i<num_threads_in_pool ; i++){
-        status = pthread_create(&pool->threads[i], NULL, do_work,pool);
-        if(status){
-            perror("Cannot create thread");
+    //create all the threads
+    for (int i = 0; i < num_threads_in_pool; i++) {
+        if (pthread_create(&(tp->threads[i]), NULL, do_work, tp) != 0) {
+            perror("thread create failed");
+            destroy_threadpool(tp);
             return NULL;
         }
     }
 
-    return pool;
+    return tp;
 }
 
-
-
-void dispatch(threadpool* from_me, dispatch_fn dispatch_to_here, void *arg){
-
-    if(from_me->dont_accept==1){
-        printf("Cant accept any new tasks\n");
+void dispatch(threadpool *from_me, dispatch_fn dispatch_to_here, void *arg) {
+    if (from_me->dont_accept == 1) {
+        fprintf(stderr, "cant accept more works");
         return;
     }
 
-    work_t* work=(work_t*)malloc(sizeof(work_t));
-    if(work==NULL)
-    {
-        perror("Cannot allocate memory");
+
+    //1. create and init work_t element
+    work_t *wt = malloc(sizeof(work_t));
+    if (wt == NULL) {
+        perror("malloc of work_t failed");
+        return;
+    }
+    wt->routine = dispatch_to_here;
+    wt->arg = arg;
+    wt->next = NULL;
+
+    //2. lock the mutex
+
+    if (pthread_mutex_lock(&(from_me->qlock)) != 0) {
+        perror("mutex lock failed");
+        free(wt);
         return;
     }
 
-    work->routine=dispatch_to_here;
-    work->arg=arg;
-    work->next=NULL;
-    pthread_mutex_lock(&from_me->qlock);
-
-    if(from_me->qhead==NULL){
-        from_me->qhead=work;
-        from_me->qtail=work;
-    }
-
-    else{
-        from_me->qtail->next=work;
-        from_me->qtail=from_me->qtail->next;
+    //3. add the work_t element to the queue
+    if (from_me->qhead == NULL) {
+        from_me->qhead = wt;
+        from_me->qtail = wt;
+    } else {
+        from_me->qtail->next = wt;
+        from_me->qtail = wt;
     }
     from_me->qsize++;
-    pthread_mutex_unlock(&from_me->qlock);
-    pthread_cond_signal(&from_me->q_not_empty);
+
+    //4. unlock mutex
+    if (pthread_mutex_unlock(&(from_me->qlock)) != 0) {
+        perror("mutex lock failed");
+        free(wt);
+        return;
+    }
+
+    pthread_cond_signal(&(from_me->q_not_empty));
 
 }
 
-void* do_work(void* p){
-
-    threadpool* temp=(threadpool*)p;
-
-    while(1){
-        pthread_mutex_lock(&temp->qlock);
-        if(temp->shutdown==1){
-            pthread_mutex_unlock(&temp->qlock);
-            return NULL;
-        }
-        if(temp->qsize==0)
-            pthread_cond_wait(&temp->q_not_empty,&temp->qlock);
-
-        if(temp->shutdown==1){
-            pthread_mutex_unlock(&temp->qlock);
-            return NULL;
+void *do_work(void *p) {
+    threadpool *tp = (threadpool *) p;
+    while (1) {
+        //1. lock mutex
+        if (pthread_mutex_lock(&(tp->qlock)) != 0) {
+            perror("mutex lock failed");
+            destroy_threadpool(tp);
+            pthread_exit(NULL);
         }
 
-        work_t* cur=temp->qhead;
-        temp->qsize--;
-        if(temp->qsize==0){
-            temp->qhead=NULL;
-            temp->qtail=NULL;
+        //2. if the queue is empty, wait
 
-            if(temp->dont_accept==1)
-                pthread_cond_signal(&temp->q_empty);
+        if(tp->qsize==0) {
+            if (pthread_cond_wait(&(tp->q_not_empty), &(tp->qlock))) {
+                perror("cond(queue not empty) wait failed");
+                pthread_mutex_unlock(&(tp->qlock));
+                pthread_exit(NULL);
+            }
         }
+
+        //if the pool is shutting exit the thread
+        if (tp->shutdown != 0) {
+            printf("is shutting\n");
+            pthread_mutex_unlock(&(tp->qlock));
+            pthread_exit(NULL);
+        }
+
+        // 3. take the first element from the queue (work_t)
+        work_t *work = tp->qhead;
+        tp->qsize--;
+        if (tp->qsize == 0)
+            tp->qhead = tp->qtail = NULL;
         else
-            temp->qhead=temp->qhead->next;
+            tp->qhead = work->next;
 
-        pthread_mutex_unlock(&temp->qlock);
-        cur->routine(cur->arg);
-        free(cur);
+        //4. unlock mutex
 
+        if (pthread_mutex_unlock(&(tp->qlock)) != 0) {
+            perror("mutex unlock failed");
+            pthread_exit(NULL);
+        }
+
+        //5. call the thread routine
+        work->routine(work->arg);
+
+        free(work);
+        work=NULL;
     }
-
 }
 
+void destroy_threadpool(threadpool *destroyme) {
+    int i = 0;
+    destroyme->shutdown = 1;
 
-void destroy_threadpool(threadpool* destroyme){
-
-    pthread_mutex_lock(&destroyme->qlock);
-    destroyme->dont_accept=1;
-    if(destroyme->qsize!=0)
-        pthread_cond_wait(&destroyme->q_empty,&destroyme->qlock);
-
-    destroyme->shutdown=1;
-    pthread_mutex_unlock(&destroyme->qlock);
-    pthread_cond_broadcast(&destroyme->q_not_empty);
-
-    int status;
-    for(int i=0;i< destroyme->num_threads; i++) {
-        status = pthread_join(destroyme->threads[i],NULL);
-        if (status) {
-            perror("Error join process");
-        }
+    //alert all threads who are currently waiting in the queue
+    if (pthread_cond_broadcast(&(destroyme->q_not_empty)) != 0) {
+        perror("cond broadcast failed");
     }
+
+    //wait for all threads to finish
+    while (i < destroyme->num_threads) {
+        if (pthread_join(destroyme->threads[i], NULL) != 0)
+            perror("pthread_join failed");
+        i++;
+    }
+
+    while(destroyme->qsize!=0){
+        work_t *temp=destroyme->qhead->next;
+        free(destroyme->qhead);
+        destroyme->qhead=temp;
+        destroyme->qsize--;
+    }
+
+    //destroy mutex and conditions
+    if (pthread_mutex_destroy(&(destroyme->qlock)) != 0)
+        perror("mutex destroy failed");
+    if (pthread_cond_destroy(&(destroyme->q_not_empty)) != 0)
+        perror("cond destroy failed");
+    if (pthread_cond_destroy(&(destroyme->q_empty)) != 0)
+        perror("cond destroy failed");
+
+
+
+
 
     free(destroyme->threads);
     free(destroyme);
