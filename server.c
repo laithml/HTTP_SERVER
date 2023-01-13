@@ -8,7 +8,6 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <sys/file.h>
-#include <signal.h>
 #include "threadpool.h"
 
 
@@ -128,7 +127,6 @@ char *notSupported() {
 }
 
 void writeFile(int file, char *path, char *extension, int sd) {
-    printf("thread[%d] writing\n",pthread_self());
     struct stat attrib;
     stat(path, &attrib);
     char lastMod[128];
@@ -143,12 +141,11 @@ void writeFile(int file, char *path, char *extension, int sd) {
     char header[300];
     sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: %s\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, extension, file_size, lastMod);
     write(sd, header, strlen(header));
-    unsigned char readBuffer[2048];
+    unsigned char readBuffer[512];
 
 
     size_t bytes_read;
     while ((bytes_read = read(file, readBuffer, 512))>   0) {
-        usleep(100);
         write(sd, readBuffer, bytes_read);
         bzero(readBuffer,512);
     }
@@ -157,7 +154,6 @@ void writeFile(int file, char *path, char *extension, int sd) {
 
 
 void dirContent(DIR *dir, char *path, int sd) {
-    printf("thread[%d]\n",pthread_self());
     time_t now;
     char timeStr[128];
     now = time(NULL);
@@ -192,7 +188,6 @@ void dirContent(DIR *dir, char *path, int sd) {
         } else {
             sprintf(body, "<tr><td><A HREF=\"%s/\">%s</A></td><td>%s</td><td>", dirent->d_name, dirent->d_name, timeStr);
         }
-        usleep(100);
         write(sd, body, strlen(body));
 
     }
@@ -217,7 +212,6 @@ int isDigit(char *string) {
 }
 
 int main(int argc, char **argv) {
-    signal(SIGPIPE, SIG_IGN);
     if (argc != 4) {
         USAGE;
         exit(EXIT_FAILURE);
@@ -310,6 +304,7 @@ char *get_mime_type(char *name) {
 }
 
 void Handle(void *socket_id) {
+    printf("thread %d is handling request", (int) pthread_self());
     int sd = *((int *) (socket_id));
     char requestMsg[500];
     char *response = NULL;
@@ -494,7 +489,6 @@ void Handle(void *socket_id) {
 
     int total;
     write:
-    printf("thread[%d]\n", pthread_self());
     total = 0;
     total = strlen(response);
     int done;
