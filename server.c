@@ -14,6 +14,7 @@
 #define USAGE printf("Usage: server <port> <pool-size> <max-number-of-request>\n")
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
 
+
 //bad request function
 char *badRequest() {
     time_t now;
@@ -157,7 +158,6 @@ void writeFile(int file, char *path, char *extension, int sd) {
 
 }
 
-//send the directory Content to the client
 void dirContent(DIR *dir, char *path, int sd) {
     time_t now;
     char timeStr[128];
@@ -169,14 +169,44 @@ void dirContent(DIR *dir, char *path, int sd) {
     char lastMod[128];
     strftime(lastMod, sizeof(lastMod), RFC1123FMT, gmtime(&attrib.st_mtime));
 
-    char header[300+128+128] = {0};
-    sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: text/html\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, lastMod);
-    write(sd, header, sizeof(header));
     struct stat st;
     struct dirent *dirent;
-    char body[1024] = {0};
+    int contentLength = 0;
+
+    // Calculate the content length by first looping through the directory entries
+    contentLength+=     snprintf(NULL, 0,"<html><head><title>Index of %s</title></head>\r\n<body><h4>Index of %s</h4><hr><table CELLSPACING=15><tr><th>Name</th><th>Last-Modified</th><th>Size</th></tr>", path, path);
+
+    contentLength+=     snprintf(NULL, 0,"</table><HR><ADDRESS>webserver/1.0</ADDRESS></body></html>");
+
+
+    while ((dirent = readdir(dir)) != NULL) {
+        char temp[strlen(path) + strlen(dirent->d_name) + 1];
+        bzero(temp, sizeof(temp));
+        strcat(temp, path);
+        strcat(temp, dirent->d_name);
+        stat(temp, &st);
+        bzero(timeStr, sizeof(timeStr));
+        strftime(timeStr, sizeof(timeStr), RFC1123FMT, gmtime(&st.st_mtime));
+        if (!S_ISDIR(st.st_mode)) {
+            contentLength +=snprintf(NULL, 0,"<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%d</td></tr>", dirent->d_name, dirent->d_name, timeStr, (int) st.st_size);
+        } else {
+            contentLength += snprintf(NULL, 0, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td></tr>", dirent->d_name, dirent->d_name, timeStr);
+        }
+    }
+
+    // Construct the response header using the calculated content length
+    char header[300+128+128] = {0};
+    sprintf(header, "HTTP/1.0 200 OK\r\nServer: webserver/1.0\r\nDate: %s\r\nContent-Type: text/html\r\nContent-Length: %d\r\nLast-Modified: %s\r\nConnection: Close\r\n\r\n", timeStr, contentLength, lastMod);
+
+    // Write the response header to the socket
+    write(sd, header, strlen(header));
+
+    // Loop through the directory entries again to send the body to the client
+    rewinddir(dir);
+    char body[contentLength+1];
+    bzero(body, sizeof(body));
     sprintf(body, "<html><head><title>Index of %s</title></head>\r\n<body><h4>Index of %s</h4><hr><table CELLSPACING=15><tr><th>Name</th><th>Last-Modified</th><th>Size</th></tr>", path, path);
-    write(sd, body, sizeof(body));
+    write(sd, body, strlen(body));
 
     while ((dirent = readdir(dir)) != NULL) {
         bzero(body, sizeof(body));
@@ -191,16 +221,22 @@ void dirContent(DIR *dir, char *path, int sd) {
         if (!S_ISDIR(st.st_mode)) {
             sprintf(body, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td><td>%d</td></tr>", dirent->d_name, dirent->d_name, timeStr, (int) st.st_size);
         } else {
-            sprintf(body, "<tr><td><A HREF=\"%s/\">%s</A></td><td>%s</td><td>", dirent->d_name, dirent->d_name, timeStr);
+            sprintf(body, "<tr><td><A HREF=\"%s\">%s</A></td><td>%s</td></tr>", dirent->d_name, dirent->d_name, timeStr);
         }
         write(sd, body, strlen(body));
 
     }
-
+    bzero(body, sizeof(body));
     sprintf(body, "</table><HR><ADDRESS>webserver/1.0</ADDRESS></body></html>");
     write(sd, body, strlen(body));
     closedir(dir);
 }
+
+
+
+
+
+
 
 
 void Handle(void *socket_id);
@@ -219,24 +255,24 @@ int isDigit(char *string) {
 int main(int argc, char **argv) {
     if (argc != 4) {
         USAGE;
-        exit(EXIT_FAILURE);
+        exit(EXIT_SUCCESS);
     }
     int port = -1, pool_size = -1, max_number_of_request = -1;
     //check arguments
     port = atoi(argv[1]);
     if (port == 0 && isDigit(argv[1]) == 1) {
         USAGE;
-        exit(EXIT_FAILURE);
+        exit(EXIT_SUCCESS);
     }
     pool_size = atoi(argv[2]);
     if (pool_size == 0 && isDigit(argv[2]) == 1) {
         USAGE;
-        exit(EXIT_FAILURE);
+        exit(EXIT_SUCCESS);
     }
     max_number_of_request = atoi(argv[3]);
     if (max_number_of_request == 0 && isDigit(argv[3]) == 1) {
         USAGE;
-        exit(EXIT_FAILURE);
+        exit(EXIT_SUCCESS);
     }
 
 
@@ -393,15 +429,19 @@ void Handle(void *socket_id) {
         strncpy(filename, path + k + 1, i - k - 1); // copy the file name from the path
     }
 
-    char tempPath[500];
+    char tempPath[500]={0};
     i = 0;
-    while (i < strlen(path)) {
-        while (path[i] != '/' && i < strlen(path)) {
-            tempPath[i] = path[i];
+    while (i < strlen(path)-2) {
+        while (path[i+2] != '/' && i < strlen(path)-2) {
+            tempPath[i] = path[i+2];
+            i++;
+        }
+        if(path[i+2]=='/'){
+            tempPath[i] = path[i+2];
             i++;
         }
         struct stat attr;
-        if (stat(path, &attr) < 0) { // check the status of the file
+        if (stat(tempPath, &attr) < 0) { // check the status of the file
             response = notFound();
             if (response == NULL)
                 response = serverError();
@@ -424,7 +464,6 @@ void Handle(void *socket_id) {
                 goto exit;
             }
         }
-        tempPath[i++] = '/';
     }
     DIR *temp = opendir(path);
     if (temp != NULL && path[strlen(path) - 1] != '/') {
