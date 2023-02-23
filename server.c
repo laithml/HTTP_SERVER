@@ -14,7 +14,6 @@
 #define USAGE printf("Usage: server <port> <pool-size> <max-number-of-request>\n")
 #define RFC1123FMT "%a, %d %b %Y %H:%M:%S GMT"
 
-
 //bad request function
 char *badRequest() {
     time_t now;
@@ -235,6 +234,22 @@ void dirContent(DIR *dir, char *path, int sd) {
 
 
 
+char *get_mime_type(char *name) {
+    char *ext = strrchr(name, '.');
+    if (!ext) return NULL;
+    if (strcmp(ext, ".html") == 0 || strcmp(ext, ".htm") == 0) return "text/html";
+    if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0) return "image/jpeg";
+    if (strcmp(ext, ".gif") == 0) return "image/gif";
+    if (strcmp(ext, ".png") == 0) return "image/png";
+    if (strcmp(ext, ".css") == 0) return "text/css";
+    if (strcmp(ext, ".au") == 0) return "audio/basic";
+    if (strcmp(ext, ".wav") == 0) return "audio/wav";
+    if (strcmp(ext, ".avi") == 0) return "video/x-msvideo";
+    if (strcmp(ext, ".mpeg") == 0 || strcmp(ext, ".mpg") == 0) return "video/mpeg";
+    if (strcmp(ext, ".mp3") == 0) return "audio/mpeg";
+    return NULL;
+}
+
 
 
 
@@ -310,12 +325,17 @@ int main(int argc, char **argv) {
 
 
     int i = 0;
-    int connection;
+    int connections[max_number_of_request];
     while (i < max_number_of_request) {
         struct sockaddr_in client;
         socklen_t len = sizeof(client);
-        connection = accept(sd, (struct sockaddr *) &client, &len);
-        dispatch(tp, (dispatch_fn) Handle, (void *) &connection);
+        connections[i] = accept(sd, (struct sockaddr *) &client, &len);
+        //check that not all threads take the same socket
+        if (connections[i] < 0) {
+            perror("accept");
+            exit(EXIT_FAILURE);
+        }
+        dispatch(tp, (dispatch_fn) Handle, (void *) &connections[i]);
         i++;
     }
     destroy_threadpool(tp);
@@ -324,29 +344,14 @@ int main(int argc, char **argv) {
 }
 
 
-char *get_mime_type(char *name) {
-    char *ext = strrchr(name, '.');
-    if (!ext) return NULL;
-    if (strcmp(ext, ".html") == 0 || strcmp(ext, ".htm") == 0) return "text/html";
-    if (strcmp(ext, ".jpg") == 0 || strcmp(ext, ".jpeg") == 0) return "image/jpeg";
-    if (strcmp(ext, ".gif") == 0) return "image/gif";
-    if (strcmp(ext, ".png") == 0) return "image/png";
-    if (strcmp(ext, ".css") == 0) return "text/css";
-    if (strcmp(ext, ".au") == 0) return "audio/basic";
-    if (strcmp(ext, ".wav") == 0) return "audio/wav";
-    if (strcmp(ext, ".avi") == 0) return "video/x-msvideo";
-    if (strcmp(ext, ".mpeg") == 0 || strcmp(ext, ".mpg") == 0) return "video/mpeg";
-    if (strcmp(ext, ".mp3") == 0) return "audio/mpeg";
-    return NULL;
-}
-
 void Handle(void *socket_id) {
     int sd = *((int *) (socket_id)); // cast the void pointer to int pointer and get the socket descriptor
     char requestMsg[500];
     char *response = NULL;
+    char *directory=NULL; // variable to hold the directory name
+    char *filename=NULL;  // variable to hold the file name
     char *p;
     bzero(requestMsg, sizeof(requestMsg)); // set all elements of requestMsg to 0
-
     //read the request from the socket
     while ((read(sd, requestMsg, sizeof(requestMsg)) >= 0)) { // read the request message from the socket
         p = strstr(requestMsg, "\r\n");
@@ -356,9 +361,11 @@ void Handle(void *socket_id) {
         }
         bzero(requestMsg, sizeof(requestMsg)); // set all elements of requestMsg to 0
     }
+
     char *token = strtok(requestMsg, " "); // tokenize the request message by space
     char *path = NULL;
     int i = 0;
+
     while (token != NULL) { // while there are still tokens left
         if (i > 2)
             break;
@@ -409,8 +416,7 @@ void Handle(void *socket_id) {
             k = i;
         i++;
     }
-    char *directory=NULL; // variable to hold the directory name
-    char *filename=NULL;  // variable to hold the file name
+
 
     if (k != -1) {
         directory = calloc(k + 2, sizeof(char)); // allocate memory for directory name
